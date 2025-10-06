@@ -8,11 +8,17 @@
     "build": "echo 'No build needed'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": ["twitch", "bot", "quiz", "chat"],
+  "keywords": [
+    "twitch",
+    "bot",
+    "quiz",
+    "chat"
+  ],
   "author": "AMNTDEVIL",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "tmi.js": "^1.8.5"
   }
 }

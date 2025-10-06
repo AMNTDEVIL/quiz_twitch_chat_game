@@ -1,6 +1,18 @@
 require('dotenv').config();
 const tmi = require('tmi.js');
 const fs = require('fs');
+const express = require('express');
+const app = express();
+
+app.get('/', (req, res) => {
+    res.send('✅ Twitch Quiz Bot is running!');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🌍 Web server running on port ${PORT}`);
+});
+
 
 // Load quiz questions
 const questions = JSON.parse(fs.readFileSync('questions.json', 'utf8'));
