@@ -19,10 +19,11 @@ let gameActive = false;
 let currentQuestion = null;
 let currentAnswer = null;
 let askedQuestions = [];
+let singlePlayer = false; // for infinite rounds
 
 // Function: get a random unused question
 function getRandomQuestion() {
-    if (askedQuestions.length === questions.length) askedQuestions = []; // reset if all used
+    if (askedQuestions.length === questions.length) askedQuestions = [];
     let q;
     do {
         q = questions[Math.floor(Math.random() * questions.length)];
@@ -39,12 +40,13 @@ function askNewQuestion(channel) {
     client.say(channel, `🧠 Quiz Question: ${currentQuestion}`);
 }
 
-// Check if game has a winner
+// Check winner for multiplayer
 function checkWinner(channel) {
     for (const [player, score] of Object.entries(players)) {
         if (score >= 5) {
             client.say(channel, `🏆 ${player} wins the game with ${score} points!`);
             gameActive = false;
+            singlePlayer = false;
             players = {};
             currentQuestion = null;
             currentAnswer = null;
@@ -56,26 +58,31 @@ function checkWinner(channel) {
 }
 
 // Start game
-function startGame(channel) {
-    if (Object.keys(players).length === 0) {
-        client.say(channel, "No players joined yet! Type !play to join the game.");
+function startGame(channel, username, isSingle = false) {
+    if (Object.keys(players).length === 0 && !isSingle) {
+        client.say(channel, "No players joined yet! Type !playquiz to join the game.");
         return;
     }
     gameActive = true;
-    client.say(channel, "🎮 The quiz begins! First to 5 points wins!");
+    singlePlayer = isSingle;
+
+    if (isSingle) {
+        client.say(channel, `🎮 Single-player quiz started for ${username}! Infinite rounds until you stop typing.`);
+    } else {
+        client.say(channel, "🎮 The quiz begins! First to 5 points wins!");
+    }
+
     askNewQuestion(channel);
 }
 
 // Show scoreboard
 function showScoreboard(channel) {
     if (Object.keys(players).length === 0) {
-        client.say(channel, "📊 No players yet! Use !play to join.");
+        client.say(channel, "📊 No players yet! Use !playquiz to join.");
         return;
     }
 
-    const sorted = Object.entries(players)
-        .sort((a, b) => b[1] - a[1]);
-
+    const sorted = Object.entries(players).sort((a, b) => b[1] - a[1]);
     let msg = "🏆 Current Scores:\n";
     sorted.forEach(([user, score], i) => {
         msg += `${i + 1}. ${user} — ${score} points\n`;
@@ -92,9 +99,9 @@ client.on('message', (channel, userstate, message, self) => {
     const msg = message.trim();
     const username = userstate['display-name'];
 
-    // !play — join the game
-    if (msg === '!play') {
-        if (gameActive) {
+    // !playquiz — join multiplayer
+    if (msg === '!playquiz') {
+        if (gameActive && !singlePlayer) {
             client.say(channel, `${username}, game is already in progress!`);
             return;
         }
@@ -108,7 +115,19 @@ client.on('message', (channel, userstate, message, self) => {
         return;
     }
 
-    // !start — starts game (streamer only)
+    // !single — start single-player infinite round
+    if (msg === '!single') {
+        if (gameActive) {
+            client.say(channel, "Game is already running!");
+            return;
+        }
+
+        players[username] = 0; // track score optionally
+        startGame(channel, username, true);
+        return;
+    }
+
+    // !start — starts multiplayer game (streamer only)
     if (msg === '!start') {
         const channelName = process.env.TWITCH_CHANNEL.replace('#', '');
         if (username.toLowerCase() !== channelName.toLowerCase()) {
@@ -121,7 +140,7 @@ client.on('message', (channel, userstate, message, self) => {
             return;
         }
 
-        startGame(channel);
+        startGame(channel, username, false);
         return;
     }
 
@@ -131,14 +150,38 @@ client.on('message', (channel, userstate, message, self) => {
         return;
     }
 
-    // Answering the question
+    // !quiz — repeat current question
+    if (msg === '!quiz') {
+        if (!gameActive || !currentQuestion) {
+            client.say(channel, "No active question! Start a game first with !playquiz or !single.");
+            return;
+        }
+        client.say(channel, `🧠 Current Question: ${currentQuestion}`);
+        return;
+    }
+
+    // !pass — skip question and show answer
+    if (msg === '!pass') {
+        if (!gameActive || !currentQuestion) {
+            client.say(channel, "No active question to skip!");
+            return;
+        }
+        client.say(channel, `⏭ ${username} passed! The answer was: "${currentAnswer}"`);
+        currentQuestion = null;
+        currentAnswer = null;
+
+        setTimeout(() => askNewQuestion(channel), 2000);
+        return;
+    }
+
+    // Answer question
     if (msg.toLowerCase().startsWith('!answer ')) {
         if (!gameActive) {
-            client.say(channel, `${username}, no active game right now. Type !play to join and !start to begin.`);
+            client.say(channel, `${username}, no active game right now. Type !playquiz or !single to start.`);
             return;
         }
         if (!currentQuestion) {
-            client.say(channel, `No active question yet. Wait for the next one!`);
+            client.say(channel, "No active question yet. Wait for the next one!");
             return;
         }
 
@@ -147,17 +190,16 @@ client.on('message', (channel, userstate, message, self) => {
 
         if (userAnswer.toLowerCase() === currentAnswer.toLowerCase()) {
             client.say(channel, `✅ Correct, ${username}! The answer was "${currentAnswer}".`);
-            players[username] += 1;
+
+            if (!singlePlayer) {
+                players[username] += 1;
+                if (checkWinner(channel)) return;
+            }
+
             currentQuestion = null;
             currentAnswer = null;
 
-            // check winner
-            if (checkWinner(channel)) return;
-
-            // next question
-            setTimeout(() => {
-                askNewQuestion(channel);
-            }, 3000);
+            setTimeout(() => askNewQuestion(channel), 2000);
         } else {
             client.say(channel, `❌ Sorry, ${username}, that's not correct!`);
         }
@@ -173,7 +215,8 @@ client.on('message', (channel, userstate, message, self) => {
         }
 
         gameActive = false;
-        client.say(channel, "🛑 Game ended by streamer. Type !play to join next round!");
+        singlePlayer = false;
+        client.say(channel, "🛑 Game ended by streamer. Type !playquiz or !single to join next round!");
         players = {};
         currentQuestion = null;
         currentAnswer = null;
